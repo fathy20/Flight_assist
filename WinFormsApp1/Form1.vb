@@ -30,7 +30,7 @@ Friend Class GradientHeader
     Inherits Panel
     Protected Overrides Sub OnPaint(e As PaintEventArgs)
         MyBase.OnPaint(e)
-        Using lg As New LinearGradientBrush(Me.ClientRectangle, Navy, PrimaryBlue, 0.0F)
+        Using lg As New LinearGradientBrush(Me.ClientRectangle, Theme.Navy, Theme.PrimaryBlue, 0.0F)
             e.Graphics.FillRectangle(lg, Me.ClientRectangle)
         End Using
     End Sub
@@ -50,53 +50,79 @@ End Class
 Partial Public Class Form1
     ' Header
     Private ReadOnly header As New GradientHeader() With {.Dock = DockStyle.Top, .Height = 96}
-    Private ReadOnly titleLbl As New Label() With {.Text = "Members", .AutoSize = True, .ForeColor = TextMain, .Font = New Font("Segoe UI Semibold", 18, FontStyle.Bold)}
+    Private ReadOnly appLogoBox As New PictureBox() With {.SizeMode = PictureBoxSizeMode.Zoom}
+    Private ReadOnly titleLbl As New Label() With {.Text = "Members", .AutoSize = True, .ForeColor = Theme.TextMain, .Font = New Font("Segoe UI Semibold", 18, FontStyle.Bold)}
     Private ReadOnly statusLbl As New Label() With {.AutoSize = True, .ForeColor = Color.FromArgb(220, 240, 255)}
 
     ' Search
     Private ReadOnly txtSearch As New TextBox() With {.Width = 360}
-    Private ReadOnly debounce As New System.Windows.Forms.Timer() With {.Interval = 1000}
+    Private ReadOnly debounce As New System.Windows.Forms.Timer() With {.Interval = 500}
 
     ' List
     Private ReadOnly lv As New SmoothListView()
+    Private ReadOnly noResultsLbl As New Label() With {
+        .Text = "No results found.",
+        .Font = New Font("Segoe UI", 12),
+        .ForeColor = Theme.TextMuted,
+        .BackColor = Theme.CardBg,
+        .Visible = False,
+        .AutoSize = False,
+        .TextAlign = ContentAlignment.MiddleCenter
+    }
     Private ReadOnly imgs As New ImageList() With {.ImageSize = New Size(48, 48), .ColorDepth = ColorDepth.Depth32Bit}
     Private RowHeight As Integer = 64
 
     ' Data
     Private ReadOnly people As New List(Of Person)()
-    Private ReadOnly thumbCache As New Dictionary(Of Integer, Image)()
 
     ' Paths
-    Private ReadOnly appRoot As String = AppDomain.CurrentDomain.BaseDirectory
-    Private ReadOnly excelPath As String = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data\people.xlsx")
-    Private ReadOnly photosDir As String = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "photos")
+    Private ReadOnly projectRoot As String = FindProjectRoot(AppDomain.CurrentDomain.BaseDirectory)
+    Private ReadOnly packageRoot As String = Path.Combine(projectRoot, "package")
+    Private ReadOnly excelPath As String = Path.Combine(packageRoot, "data\people.xlsx")
+    Private ReadOnly photosDir As String = Path.Combine(packageRoot, "photos")
+    Private ReadOnly assetsDir As String = Path.Combine(packageRoot, "assets")
 
     Public Sub New()
         InitializeComponent()
 
-        Me.Text = "Directory — Excel data (Styled)"
-        Me.BackColor = CardBg
+        ' <<< تم تعديل هذا السطر ليصبح اسم الشركة فقط
+        Me.Text = "Flight Assist"
+
+        Me.BackColor = Theme.CardBg
         Me.Size = New Size(880, 560)
         Me.StartPosition = FormStartPosition.CenterScreen
         Me.Font = New Font("Segoe UI", 10.0F, FontStyle.Regular, GraphicsUnit.Point)
+
+        ' This code block loads the window icon from logo.ico
+        Try
+            Dim iconPath As String = Path.Combine(assetsDir, "logo.ico")
+            If File.Exists(iconPath) Then
+                Me.Icon = New Icon(iconPath)
+            Else
+                Console.WriteLine($"Warning: logo.ico not found at {iconPath}. Default icon will be used for the form.")
+            End If
+        Catch ex As Exception
+            Console.WriteLine($"Error loading form icon: {ex.Message}")
+        End Try
 
         BuildHeader()
         BuildList()
         BindEvents()
 
-        Directory.CreateDirectory(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data"))
+        ' Ensure directories exist
+        Directory.CreateDirectory(Path.Combine(packageRoot, "data"))
         Directory.CreateDirectory(photosDir)
 
         Try
             If Not File.Exists(excelPath) Then
-                Throw New FileNotFoundException("Excel not found", excelPath)
+                Throw New FileNotFoundException("Excel file not found", excelPath)
             End If
             LoadFromExcel(excelPath)
-            EnsurePhotosAndPaths(excelPath) ' يولّد أفاتار JPG ويكتب المسار لو ناقص
+            EnsurePhotosAndPaths(excelPath)
             statusLbl.Text = $"Loaded: {people.Count} people"
         Catch ex As Exception
             MessageBox.Show("Excel load error: " & ex.Message & vbCrLf &
-                            "سيتم تشغيل البرنامج ببيانات تجريبية.", "Excel", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                            "The program will run with sample data.", "Excel Error", MessageBoxButtons.OK, MessageBoxIcon.Warning)
             SeedPeople()
             statusLbl.Text = $"Loaded: {people.Count} (seed)"
         End Try
@@ -104,13 +130,37 @@ Partial Public Class Form1
         PerformSearch("")
     End Sub
 
+    Private Shared Function FindProjectRoot(startPath As String) As String
+        Dim dir = New DirectoryInfo(startPath)
+        ' Search for the solution file (.sln) to identify the project root
+        While dir IsNot Nothing AndAlso Not dir.GetFiles("*.sln").Any()
+            dir = dir.Parent
+        End While
+        Return If(dir IsNot Nothing, dir.FullName, startPath)
+    End Function
+
     Private Sub BuildHeader()
         Controls.Add(header)
 
-        titleLbl.Location = New Point(20, 20)
+        ' Setup the logo inside the header using logo.png
+        appLogoBox.Size = New Size(40, 40)
+        appLogoBox.Location = New Point(20, 18)
+        Try
+            Dim logoPngPath As String = Path.Combine(assetsDir, "logo.png")
+            If File.Exists(logoPngPath) Then
+                appLogoBox.Image = Image.FromFile(logoPngPath)
+            End If
+        Catch ex As Exception
+            Console.WriteLine($"Error loading header logo: {ex.Message}")
+        End Try
+        header.Controls.Add(appLogoBox)
+
+        ' Adjust title position to make room for the logo
+        titleLbl.Location = New Point(appLogoBox.Right + 12, 20)
         header.Controls.Add(titleLbl)
 
-        'txtSearch.PlaceholderText = "Search name, email, or ID…"
+        ' Adjust search box position
+        txtSearch.PlaceholderText = "Search by name, email, or ID..."
         txtSearch.Location = New Point(22, 60)
         txtSearch.Width = 340
         txtSearch.BorderStyle = BorderStyle.FixedSingle
@@ -125,7 +175,13 @@ Partial Public Class Form1
         lv.Size = New Size(ClientSize.Width - 32, ClientSize.Height - header.Height - 28)
         lv.Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right Or AnchorStyles.Bottom
         lv.SmallImageList = imgs
+        lv.BackColor = Theme.CardBg
         Controls.Add(lv)
+
+        noResultsLbl.Bounds = lv.Bounds
+        noResultsLbl.Anchor = lv.Anchor
+        Controls.Add(noResultsLbl)
+        noResultsLbl.BringToFront()
 
         AddHandler lv.DrawItem, AddressOf Lv_DrawItem
         AddHandler lv.Resize, Sub() lv.Invalidate()
@@ -145,13 +201,11 @@ Partial Public Class Form1
         PerformSearch(txtSearch.Text.Trim())
     End Sub
 
-    '================ Excel =================
     Private Sub LoadFromExcel(path As String)
         people.Clear()
-        thumbCache.Clear()
         Using wb As New XLWorkbook(path)
-            Dim ws = wb.Worksheet("People") ' لازم الشيت اسمه People
-            Dim r As Integer = 2 ' الصف الأول عناوين
+            Dim ws = wb.Worksheet("People")
+            Dim r As Integer = 2
             While Not ws.Cell(r, 1).IsEmpty()
                 Dim p As New Person With {
                     .Id = ws.Cell(r, 1).GetValue(Of Integer)(),
@@ -165,7 +219,6 @@ Partial Public Class Form1
         End Using
     End Sub
 
-    ' يضمن ان كل شخص له صورة: لو ناقصة يولّد Avatar JPEG ويحط المسار في الإكسيل
     Private Sub EnsurePhotosAndPaths(excelFile As String)
         Dim updated As Boolean = False
         Using wb As New XLWorkbook(excelFile)
@@ -176,78 +229,80 @@ Partial Public Class Form1
                 Dim fullName As String = ws.Cell(r, 2).GetString()
                 Dim curPath As String = ws.Cell(r, 4).GetString()
 
-                Dim needGen As Boolean = String.IsNullOrWhiteSpace(curPath)
-                Dim abs As String = Nothing
-
-                If Not needGen Then
-                    abs = If(Path.IsPathRooted(curPath), curPath, Path.Combine(appRoot, curPath))
-                    If Not File.Exists(abs) Then needGen = True
+                Dim needsAvatar As Boolean = String.IsNullOrWhiteSpace(curPath)
+                If Not needsAvatar Then
+                    Dim absPath = If(Path.IsPathRooted(curPath), curPath, Path.Combine(packageRoot, curPath))
+                    If Not File.Exists(absPath) Then needsAvatar = True
                 End If
 
-                If needGen Then
-                    Dim rel As String = $"photos\emp_{id}.jpg"
-                    Dim dest As String = Path.Combine(appRoot, rel)
-                    Directory.CreateDirectory(Path.GetDirectoryName(dest))
+                If needsAvatar Then
+                    Dim relPath As String = $"photos\emp_{id}.jpg"
+                    Dim destPath As String = Path.Combine(packageRoot, relPath)
+                    Directory.CreateDirectory(Path.GetDirectoryName(destPath))
                     Using bmp = MakeAvatar(GetInitials(fullName), 256, id)
-                        SaveJpeg(dest, bmp, 85L)
+                        SaveJpeg(destPath, bmp, 85L)
                     End Using
-                    ws.Cell(r, 4).Value = rel
+                    ws.Cell(r, 4).Value = relPath
                     updated = True
 
-                    Dim p = people.FirstOrDefault(Function(pp) pp.Id = id)
-                    If p IsNot Nothing Then p.PhotoPath = rel
+                    Dim p = people.FirstOrDefault(Function(person) person.Id = id)
+                    If p IsNot Nothing Then p.PhotoPath = relPath
                 End If
-
                 r += 1
             End While
             If updated Then wb.Save()
         End Using
     End Sub
 
-    '================ Search =================
     Private Sub PerformSearch(query As String)
         lv.BeginUpdate()
         lv.Items.Clear()
         imgs.Images.Clear()
 
-        Dim res As IEnumerable(Of Person)
+        Dim results As IEnumerable(Of Person)
+
         If String.IsNullOrWhiteSpace(query) Then
-            res = Enumerable.Empty(Of Person)()
+            results = people.OrderBy(Function(p) p.FullName)
         ElseIf Not IsQueryAllowed(query) Then
-            res = Enumerable.Empty(Of Person)()
+            results = Enumerable.Empty(Of Person)()
         Else
             Dim q = query.ToLowerInvariant()
-            res = people.
+            results = people.
                 Where(Function(p) p.FullName.ToLower().Contains(q) _
                                OrElse p.Email.ToLower().Contains(q) _
                                OrElse p.Id.ToString().Contains(q)).
-                OrderBy(Function(p) p.FullName).
-                Take(6)
+                OrderBy(Function(p) p.FullName)
         End If
 
-        For Each p In res
+        For Each p In results
             Dim key As String = p.Id.ToString()
             imgs.Images.Add(key, GetThumb(p))
             Dim it As New ListViewItem With {.Text = p.FullName, .ImageKey = key, .Tag = p}
             lv.Items.Add(it)
         Next
 
+        If lv.Items.Count = 0 AndAlso Not String.IsNullOrWhiteSpace(query) Then
+            noResultsLbl.Text = $"No results found for '{query}'"
+            noResultsLbl.Visible = True
+        Else
+            noResultsLbl.Visible = False
+        End If
+
         lv.EndUpdate()
         lv.Invalidate()
     End Sub
 
     Private Function IsQueryAllowed(q As String) As Boolean
-        If q.Length < 2 OrElse q.Length > 30 Then Return False
+        If q.Length < 1 OrElse q.Length > 30 Then Return False
         If q.Split({" "c}, StringSplitOptions.RemoveEmptyEntries).Length > 4 Then Return False
         If Not Regex.IsMatch(q, "^[\p{L}\p{Nd}\s@._+\-]+$") Then Return False
         Return True
     End Function
 
-    '================ Owner-draw (بطاقات + صورة دائرية) =================
     Private Sub Lv_DrawItem(sender As Object, e As DrawListViewItemEventArgs)
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias
         Dim bounds As New Rectangle(6, e.Bounds.Y + 4, lv.ClientSize.Width - 12, RowHeight - 8)
-        Dim bg = If(e.ItemIndex Mod 2 = 0, CardBg, CardBgAlt)
+        Dim bg = If(e.ItemIndex Mod 2 = 0, Theme.CardBg, Theme.CardBgAlt)
         Using b As New SolidBrush(bg)
             e.Graphics.FillRectangle(b, bounds)
         End Using
@@ -273,8 +328,8 @@ Partial Public Class Form1
         Dim mailPt As New Point(avatarRect.Right + 12, bounds.Y + 32)
         Using nameFont As New Font("Segoe UI Semibold", 11, FontStyle.Bold),
               mailFont As New Font("Segoe UI", 9)
-            TextRenderer.DrawText(e.Graphics, p.FullName, nameFont, namePt, TextMain, TextFormatFlags.NoPadding)
-            TextRenderer.DrawText(e.Graphics, p.Email, mailFont, mailPt, TextMuted, TextFormatFlags.NoPadding)
+            TextRenderer.DrawText(e.Graphics, p.FullName, nameFont, namePt, Theme.TextMain, TextFormatFlags.NoPadding)
+            TextRenderer.DrawText(e.Graphics, p.Email, mailFont, mailPt, Theme.TextMuted, TextFormatFlags.NoPadding)
         End Using
 
         ' ID right
@@ -282,40 +337,42 @@ Partial Public Class Form1
         Using small As New Font("Segoe UI", 9, FontStyle.Regular)
             Dim sz = TextRenderer.MeasureText(idStr, small)
             Dim idPt As New Point(bounds.Right - sz.Width - 12, bounds.Y + (RowHeight - sz.Height) \ 2)
-            TextRenderer.DrawText(e.Graphics, idStr, small, idPt, TextMuted, TextFormatFlags.NoPadding)
+            TextRenderer.DrawText(e.Graphics, idStr, small, idPt, Theme.TextMuted, TextFormatFlags.NoPadding)
         End Using
     End Sub
 
-    '================ Thumbs / Avatars =================
     Private Function GetThumb(p As Person) As Image
         Const size As Integer = 48
         If p Is Nothing Then Return MakeAvatar("?", size, 0)
+
         Try
-            Dim inPath As String = p.PhotoPath
-            If Not String.IsNullOrWhiteSpace(inPath) Then
-                If Not Path.IsPathRooted(inPath) Then inPath = Path.Combine(appRoot, inPath)
-                Dim photoAbs = Path.GetFullPath(inPath)
-                If File.Exists(photoAbs) Then
-                    Using fs As New FileStream(photoAbs, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)
-                        Using rawImg As Image = Image.FromStream(fs, False, False)
-                            Using tmp As New Bitmap(rawImg)
-                                Return ResizeToThumb(tmp, size, size)
-                            End Using
+            Dim photoPath As String = p.PhotoPath
+            If Not String.IsNullOrWhiteSpace(photoPath) Then
+                Dim fullPath = If(Path.IsPathRooted(photoPath), photoPath, Path.Combine(packageRoot, photoPath))
+                If File.Exists(fullPath) Then
+                    ' Use a memory stream to avoid locking the file
+                    Dim fileBytes = File.ReadAllBytes(fullPath)
+                    Using ms As New MemoryStream(fileBytes)
+                        Using rawImg As Image = Image.FromStream(ms)
+                            Return ResizeToThumb(rawImg, size, size)
                         End Using
                     End Using
                 End If
             End If
-        Catch
+        Catch ex As Exception
+            Console.WriteLine($"Error loading photo for {p.FullName}: {ex.Message}")
         End Try
+
+        ' Fallback to avatar if photo not found or failed to load
         Return MakeAvatar(GetInitials(p.FullName), size, p.Id)
     End Function
 
     Private Function ResizeToThumb(src As Image, w As Integer, h As Integer) As Image
         Dim bmp As New Bitmap(w, h)
         Using g = Graphics.FromImage(bmp)
-            g.CompositingQuality = CompositingQuality.HighSpeed
-            g.InterpolationMode = InterpolationMode.HighQualityBilinear
-            g.SmoothingMode = SmoothingMode.HighSpeed
+            g.CompositingQuality = CompositingQuality.HighQuality
+            g.InterpolationMode = InterpolationMode.HighQualityBicubic
+            g.SmoothingMode = SmoothingMode.AntiAlias
             g.DrawImage(src, New Rectangle(0, 0, w, h))
         End Using
         Return bmp
@@ -356,7 +413,6 @@ Partial Public Class Form1
         Return New String(parts.Select(Function(s) s(0)).ToArray())
     End Function
 
-    ' Seed لو Excel فشل
     Private Sub SeedPeople()
         people.Clear()
         people.AddRange({
