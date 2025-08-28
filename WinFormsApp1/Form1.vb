@@ -1,10 +1,13 @@
 ﻿Imports System.Drawing
 Imports System.Drawing.Drawing2D
+Imports System.Drawing.Imaging
 Imports System.Text.RegularExpressions
+Imports System.Windows.Forms
 Imports System.IO
+Imports System.Linq
 Imports ClosedXML.Excel
 
-'===================== Theme =====================
+'================ Theme =================
 Module Theme
     Public ReadOnly Navy As Color = ColorTranslator.FromHtml("#0C2E4E")
     Public ReadOnly PrimaryBlue As Color = ColorTranslator.FromHtml("#0066A6")
@@ -14,7 +17,7 @@ Module Theme
     Public ReadOnly TextMuted As Color = Color.FromArgb(190, 220, 240)
 End Module
 
-'==================== Model ======================
+'================ Data model =================
 Public Class Person
     Public Property Id As Integer
     Public Property FullName As String
@@ -22,31 +25,17 @@ Public Class Person
     Public Property PhotoPath As String
 End Class
 
-'================== Header (Gradient) ================
+'================ UI helpers =================
 Friend Class GradientHeader
     Inherits Panel
-    Public Sub New()
-        Me.DoubleBuffered = True
-        Me.Height = 96
-        Me.Dock = DockStyle.Top
-        Me.Padding = New Padding(16, 12, 16, 12)
-        Me.SetStyle(ControlStyles.AllPaintingInWmPaint Or ControlStyles.OptimizedDoubleBuffer Or
-                    ControlStyles.ResizeRedraw Or ControlStyles.UserPaint Or
-                    ControlStyles.SupportsTransparentBackColor, True)
-        Me.BackColor = Color.Transparent
-    End Sub
     Protected Overrides Sub OnPaint(e As PaintEventArgs)
         MyBase.OnPaint(e)
-        Using lg As New LinearGradientBrush(Me.ClientRectangle, Theme.Navy, Theme.PrimaryBlue, 0.0F)
+        Using lg As New LinearGradientBrush(Me.ClientRectangle, Navy, PrimaryBlue, 0.0F)
             e.Graphics.FillRectangle(lg, Me.ClientRectangle)
-        End Using
-        Using p As New Pen(Color.FromArgb(80, Color.White), 2)
-            e.Graphics.DrawLine(p, 0, Me.Height - 1, Me.Width, Me.Height - 1)
         End Using
     End Sub
 End Class
 
-'================== Smoother ListView ==================
 Friend Class SmoothListView
     Inherits ListView
     Public Sub New()
@@ -54,27 +43,19 @@ Friend Class SmoothListView
         Me.OwnerDraw = True
         Me.HeaderStyle = ColumnHeaderStyle.None
         Me.View = View.List
-        Me.BorderStyle = BorderStyle.None
     End Sub
 End Class
 
-'======================= Main Form ======================
-Public Class Form1
-    Inherits Form
-
-    ' Header UI
-    Private ReadOnly header As New GradientHeader()
-    Private ReadOnly titleLbl As New Label() With {.AutoSize = True, .ForeColor = Theme.TextMain,
-                                                   .Font = New Font("Segoe UI Semibold", 18, FontStyle.Bold),
-                                                   .Text = "FlightAssist Directory",
-                                                   .BackColor = Color.Transparent}
-    Private ReadOnly statusLbl As New Label() With {.AutoSize = True, .ForeColor = Color.FromArgb(220, 240, 255),
-                                                    .BackColor = Color.Transparent}
-    Private ReadOnly logo As New PictureBox() With {.SizeMode = PictureBoxSizeMode.Zoom, .Size = New Size(56, 56)}
+'================ Main Form =================
+Partial Public Class Form1
+    ' Header
+    Private ReadOnly header As New GradientHeader() With {.Dock = DockStyle.Top, .Height = 96}
+    Private ReadOnly titleLbl As New Label() With {.Text = "Members", .AutoSize = True, .ForeColor = TextMain, .Font = New Font("Segoe UI Semibold", 18, FontStyle.Bold)}
+    Private ReadOnly statusLbl As New Label() With {.AutoSize = True, .ForeColor = Color.FromArgb(220, 240, 255)}
 
     ' Search
-    Private ReadOnly txtSearch As New TextBox() With {.Width = 360, .BorderStyle = BorderStyle.FixedSingle}
-    Private ReadOnly debounce As New Timer() With {.Interval = 600} ' 0.6s
+    Private ReadOnly txtSearch As New TextBox() With {.Width = 360}
+    Private ReadOnly debounce As New System.Windows.Forms.Timer() With {.Interval = 1000}
 
     ' List
     Private ReadOnly lv As New SmoothListView()
@@ -83,18 +64,19 @@ Public Class Form1
 
     ' Data
     Private ReadOnly people As New List(Of Person)()
-    Private ReadOnly thumbCache As New Dictionary(Of String, Image)(StringComparer.OrdinalIgnoreCase)
+    Private ReadOnly thumbCache As New Dictionary(Of Integer, Image)()
 
-    ' Package paths
-    Private ReadOnly packageRoot As String = FindPackageRoot()
-    Private ReadOnly excelPath As String = Path.Combine(packageRoot, "data\people.xlsx")
-    Private ReadOnly photosDir As String = Path.Combine(packageRoot, "photos")
-    Private ReadOnly logoPath As String = Path.Combine(packageRoot, "assets\logo.png")
+    ' Paths
+    Private ReadOnly appRoot As String = AppDomain.CurrentDomain.BaseDirectory
+    Private ReadOnly excelPath As String = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data\people.xlsx")
+    Private ReadOnly photosDir As String = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "photos")
 
     Public Sub New()
-        Me.Text = "FlightAssist Directory"
-        Me.BackColor = Theme.CardBg
-        Me.Size = New Size(980, 600)
+        InitializeComponent()
+
+        Me.Text = "Directory — Excel data (Styled)"
+        Me.BackColor = CardBg
+        Me.Size = New Size(880, 560)
         Me.StartPosition = FormStartPosition.CenterScreen
         Me.Font = New Font("Segoe UI", 10.0F, FontStyle.Regular, GraphicsUnit.Point)
 
@@ -102,77 +84,56 @@ Public Class Form1
         BuildList()
         BindEvents()
 
-        ' Logo
-        Try
-            If File.Exists(logoPath) Then logo.Image = Image.FromFile(logoPath)
-        Catch
-        End Try
-        If logo.Image Is Nothing Then
-            ' فfallback بسيط
-            Dim bmp As New Bitmap(56, 56)
-            Using g = Graphics.FromImage(bmp)
-                g.SmoothingMode = SmoothingMode.AntiAlias
-                Using br As New SolidBrush(Color.White)
-                    g.FillEllipse(br, 2, 2, 52, 52)
-                End Using
-            End Using
-            logo.Image = bmp
-        End If
+        Directory.CreateDirectory(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data"))
+        Directory.CreateDirectory(photosDir)
 
-        ' تأمين ملف الإكسيل (لو ناقص/تالف يتبني نظيف)
-        EnsurePeopleExcel(excelPath)
-
-        ' Load data
         Try
+            If Not File.Exists(excelPath) Then
+                Throw New FileNotFoundException("Excel not found", excelPath)
+            End If
             LoadFromExcel(excelPath)
+            EnsurePhotosAndPaths(excelPath) ' يولّد أفاتار JPG ويكتب المسار لو ناقص
             statusLbl.Text = $"Loaded: {people.Count} people"
         Catch ex As Exception
             MessageBox.Show("Excel load error: " & ex.Message & vbCrLf &
-                            "سيتم تشغيل البرنامج ببيانات تجريبية.", "Excel",
-                            MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                            "سيتم تشغيل البرنامج ببيانات تجريبية.", "Excel", MessageBoxButtons.OK, MessageBoxIcon.Warning)
             SeedPeople()
-            statusLbl.Text = $"Loaded seed: {people.Count}"
+            statusLbl.Text = $"Loaded: {people.Count} (seed)"
         End Try
 
-        PerformSearch("") ' بداية
+        PerformSearch("")
     End Sub
 
-    '----------------- Layout -----------------
     Private Sub BuildHeader()
         Controls.Add(header)
 
-        logo.Location = New Point(header.Padding.Left, header.Padding.Top - 2)
-        header.Controls.Add(logo)
-
-        titleLbl.Location = New Point(logo.Right + 10, logo.Top + 6)
+        titleLbl.Location = New Point(20, 20)
         header.Controls.Add(titleLbl)
 
-        txtSearch.Location = New Point(logo.Left, logo.Bottom + 6)
-        txtSearch.Width = Math.Max(360, Me.ClientSize.Width \ 3)
-        txtSearch.Anchor = AnchorStyles.Left Or AnchorStyles.Top Or AnchorStyles.Right
+        'txtSearch.PlaceholderText = "Search name, email, or ID…"
+        txtSearch.Location = New Point(22, 60)
+        txtSearch.Width = 340
+        txtSearch.BorderStyle = BorderStyle.FixedSingle
         header.Controls.Add(txtSearch)
 
-        statusLbl.Location = New Point(txtSearch.Right + 12, txtSearch.Top + 2)
-        statusLbl.Anchor = AnchorStyles.Top Or AnchorStyles.Right
+        statusLbl.Location = New Point(380, 64)
         header.Controls.Add(statusLbl)
-
-        AddHandler header.Resize, Sub()
-                                      txtSearch.Width = Math.Max(360, Me.ClientSize.Width \ 3)
-                                      statusLbl.Left = txtSearch.Right + 12
-                                  End Sub
     End Sub
 
     Private Sub BuildList()
+        lv.Location = New Point(16, header.Bottom + 12)
+        lv.Size = New Size(ClientSize.Width - 32, ClientSize.Height - header.Height - 28)
+        lv.Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right Or AnchorStyles.Bottom
         lv.SmallImageList = imgs
-        lv.Dock = DockStyle.Fill
         Controls.Add(lv)
-        lv.BringToFront()
+
         AddHandler lv.DrawItem, AddressOf Lv_DrawItem
+        AddHandler lv.Resize, Sub() lv.Invalidate()
     End Sub
 
     Private Sub BindEvents()
         AddHandler txtSearch.TextChanged,
-            Sub(sender As Object, e As EventArgs)
+            Sub()
                 debounce.Stop()
                 debounce.Start()
             End Sub
@@ -184,69 +145,13 @@ Public Class Form1
         PerformSearch(txtSearch.Text.Trim())
     End Sub
 
-    '---------------- Excel I/O ----------------
-    Private Sub EnsurePeopleExcel(path As String)
-        Try
-            Dim ok As Boolean = False
-            If File.Exists(path) Then
-                Try
-                    Using wb As New XLWorkbook(path)
-                        Dim ws = wb.Worksheet("People")
-                        ok = (ws IsNot Nothing)
-                    End Using
-                Catch
-                    ok = False
-                End Try
-            End If
-            If Not ok Then
-                Dim dir = System.IO.Path.GetDirectoryName(path)
-                If Not Directory.Exists(dir) Then Directory.CreateDirectory(dir)
-                CreateCleanPeopleExcel(path)
-            End If
-        Catch ex As Exception
-            ' آخر حل: نبني ملف نظيف
-            Try
-                CreateCleanPeopleExcel(path)
-            Catch
-            End Try
-        End Try
-    End Sub
-
-    Private Sub CreateCleanPeopleExcel(path As String)
-        Using wb As New XLWorkbook()
-            Dim ws = wb.AddWorksheet("People")
-            ' Header
-            ws.Cell(1, 1).Value = "Id"
-            ws.Cell(1, 2).Value = "FullName"
-            ws.Cell(1, 3).Value = "Email"
-            ws.Cell(1, 4).Value = "PhotoPath"
-            ' Samples
-            ws.Cell(2, 1).Value = 6 : ws.Cell(2, 2).Value = "Mohamed Imran"
-            ws.Cell(2, 3).Value = "mohamed.imran@acmecorp.com"
-            ws.Cell(2, 4).Value = "photos\AA1LaybT.jpg"
-
-            ws.Cell(3, 1).Value = 24 : ws.Cell(3, 2).Value = "Sherine Salem"
-            ws.Cell(3, 3).Value = "sherine.s@acmecorp.com"
-            ws.Cell(3, 4).Value = "photos\R.jpg"
-
-            ws.Cell(4, 1).Value = 42 : ws.Cell(4, 2).Value = "Iman Mohamed"
-            ws.Cell(4, 3).Value = "iman.m@acmecorp.com"
-            ws.Cell(4, 4).Value = "photos\woman.jpg"
-
-            ws.Cell(5, 1).Value = 31 : ws.Cell(5, 2).Value = "Mostafa Fathy"
-            ws.Cell(5, 3).Value = "mostafa.f@acmecorp.com"
-            ws.Cell(5, 4).Value = ""
-
-            ws.Columns().AdjustToContents()
-            wb.SaveAs(path)
-        End Using
-    End Sub
-
+    '================ Excel =================
     Private Sub LoadFromExcel(path As String)
         people.Clear()
+        thumbCache.Clear()
         Using wb As New XLWorkbook(path)
-            Dim ws = wb.Worksheet("People")
-            Dim r As Integer = 2
+            Dim ws = wb.Worksheet("People") ' لازم الشيت اسمه People
+            Dim r As Integer = 2 ' الصف الأول عناوين
             While Not ws.Cell(r, 1).IsEmpty()
                 Dim p As New Person With {
                     .Id = ws.Cell(r, 1).GetValue(Of Integer)(),
@@ -260,7 +165,46 @@ Public Class Form1
         End Using
     End Sub
 
-    '---------------- Search (priority) --------------
+    ' يضمن ان كل شخص له صورة: لو ناقصة يولّد Avatar JPEG ويحط المسار في الإكسيل
+    Private Sub EnsurePhotosAndPaths(excelFile As String)
+        Dim updated As Boolean = False
+        Using wb As New XLWorkbook(excelFile)
+            Dim ws = wb.Worksheet("People")
+            Dim r As Integer = 2
+            While Not ws.Cell(r, 1).IsEmpty()
+                Dim id As Integer = ws.Cell(r, 1).GetValue(Of Integer)()
+                Dim fullName As String = ws.Cell(r, 2).GetString()
+                Dim curPath As String = ws.Cell(r, 4).GetString()
+
+                Dim needGen As Boolean = String.IsNullOrWhiteSpace(curPath)
+                Dim abs As String = Nothing
+
+                If Not needGen Then
+                    abs = If(Path.IsPathRooted(curPath), curPath, Path.Combine(appRoot, curPath))
+                    If Not File.Exists(abs) Then needGen = True
+                End If
+
+                If needGen Then
+                    Dim rel As String = $"photos\emp_{id}.jpg"
+                    Dim dest As String = Path.Combine(appRoot, rel)
+                    Directory.CreateDirectory(Path.GetDirectoryName(dest))
+                    Using bmp = MakeAvatar(GetInitials(fullName), 256, id)
+                        SaveJpeg(dest, bmp, 85L)
+                    End Using
+                    ws.Cell(r, 4).Value = rel
+                    updated = True
+
+                    Dim p = people.FirstOrDefault(Function(pp) pp.Id = id)
+                    If p IsNot Nothing Then p.PhotoPath = rel
+                End If
+
+                r += 1
+            End While
+            If updated Then wb.Save()
+        End Using
+    End Sub
+
+    '================ Search =================
     Private Sub PerformSearch(query As String)
         lv.BeginUpdate()
         lv.Items.Clear()
@@ -272,54 +216,38 @@ Public Class Form1
         ElseIf Not IsQueryAllowed(query) Then
             res = Enumerable.Empty(Of Person)()
         Else
-            Dim q = query.Trim()
-            Dim qLower = q.ToLowerInvariant()
-
+            Dim q = query.ToLowerInvariant()
             res = people.
-                Select(Function(p)
-                           Dim nameLower = If(p.FullName, "").ToLowerInvariant()
-                           Dim emailLower = If(p.Email, "").ToLowerInvariant()
-                           Dim idExact = If(Integer.TryParse(q, Nothing) AndAlso p.Id.ToString() = q, 0, 1)
-                           Dim nameStarts = If(nameLower.StartsWith(qLower), 0, 1)
-                           Dim emailStarts = If(emailLower.StartsWith(qLower), 0, 1)
-                           Dim wordStarts = If(nameLower.Split({" "c}, StringSplitOptions.RemoveEmptyEntries).
-                                               Any(Function(w) w.StartsWith(qLower)), 0, 1)
-                           Dim containsHit = If(nameLower.Contains(qLower) OrElse emailLower.Contains(qLower), 0, 1)
-                           Return New With {.P = p, .S = New Integer() {idExact, nameStarts, emailStarts, wordStarts, containsHit}}
-                       End Function).
-                OrderBy(Function(x) x.S(0)).
-                ThenBy(Function(x) x.S(1)).
-                ThenBy(Function(x) x.S(2)).
-                ThenBy(Function(x) x.S(3)).
-                ThenBy(Function(x) x.S(4)).
-                ThenBy(Function(x) x.P.FullName).
-                Select(Function(x) x.P).
-                Take(12)   ' خليه 6 لو عايز نتائج أقل
+                Where(Function(p) p.FullName.ToLower().Contains(q) _
+                               OrElse p.Email.ToLower().Contains(q) _
+                               OrElse p.Id.ToString().Contains(q)).
+                OrderBy(Function(p) p.FullName).
+                Take(6)
         End If
 
         For Each p In res
             Dim key As String = p.Id.ToString()
             imgs.Images.Add(key, GetThumb(p))
-            lv.Items.Add(New ListViewItem With {.Text = p.FullName, .ImageKey = key, .Tag = p})
+            Dim it As New ListViewItem With {.Text = p.FullName, .ImageKey = key, .Tag = p}
+            lv.Items.Add(it)
         Next
 
-        statusLbl.Text = $"Loaded: {people.Count} • Showing: {lv.Items.Count}"
         lv.EndUpdate()
         lv.Invalidate()
     End Sub
 
     Private Function IsQueryAllowed(q As String) As Boolean
-        If q.Length < 2 OrElse q.Length > 30 Then Return False  ' اكتب 2 حروف على الأقل
+        If q.Length < 2 OrElse q.Length > 30 Then Return False
         If q.Split({" "c}, StringSplitOptions.RemoveEmptyEntries).Length > 4 Then Return False
         If Not Regex.IsMatch(q, "^[\p{L}\p{Nd}\s@._+\-]+$") Then Return False
         Return True
     End Function
 
-    '---------------- Owner-Draw Rows ----------------
+    '================ Owner-draw (بطاقات + صورة دائرية) =================
     Private Sub Lv_DrawItem(sender As Object, e As DrawListViewItemEventArgs)
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias
         Dim bounds As New Rectangle(6, e.Bounds.Y + 4, lv.ClientSize.Width - 12, RowHeight - 8)
-        Dim bg = If(e.ItemIndex Mod 2 = 0, Theme.CardBg, Theme.CardBgAlt)
+        Dim bg = If(e.ItemIndex Mod 2 = 0, CardBg, CardBgAlt)
         Using b As New SolidBrush(bg)
             e.Graphics.FillRectangle(b, bounds)
         End Using
@@ -327,6 +255,7 @@ Public Class Form1
         Dim p = TryCast(e.Item.Tag, Person)
         If p Is Nothing Then Return
 
+        ' Thumbnail (circle)
         Dim img = imgs.Images(e.Item.ImageKey)
         Dim avatarRect As New Rectangle(bounds.X + 10, bounds.Y + 8, 48, 48)
         Using gp As New GraphicsPath()
@@ -339,37 +268,38 @@ Public Class Form1
             End Using
         End Using
 
+        ' Texts
         Dim namePt As New Point(avatarRect.Right + 12, bounds.Y + 10)
         Dim mailPt As New Point(avatarRect.Right + 12, bounds.Y + 32)
         Using nameFont As New Font("Segoe UI Semibold", 11, FontStyle.Bold),
               mailFont As New Font("Segoe UI", 9)
-            TextRenderer.DrawText(e.Graphics, p.FullName, nameFont, namePt, Theme.TextMain, TextFormatFlags.NoPadding)
-            TextRenderer.DrawText(e.Graphics, p.Email, mailFont, mailPt, Theme.TextMuted, TextFormatFlags.NoPadding)
+            TextRenderer.DrawText(e.Graphics, p.FullName, nameFont, namePt, TextMain, TextFormatFlags.NoPadding)
+            TextRenderer.DrawText(e.Graphics, p.Email, mailFont, mailPt, TextMuted, TextFormatFlags.NoPadding)
+        End Using
+
+        ' ID right
+        Dim idStr = $"ID {p.Id}"
+        Using small As New Font("Segoe UI", 9, FontStyle.Regular)
+            Dim sz = TextRenderer.MeasureText(idStr, small)
+            Dim idPt As New Point(bounds.Right - sz.Width - 12, bounds.Y + (RowHeight - sz.Height) \ 2)
+            TextRenderer.DrawText(e.Graphics, idStr, small, idPt, TextMuted, TextFormatFlags.NoPadding)
         End Using
     End Sub
 
-    '---------------- Thumbs / Avatars ----------------
+    '================ Thumbs / Avatars =================
     Private Function GetThumb(p As Person) As Image
         Const size As Integer = 48
         If p Is Nothing Then Return MakeAvatar("?", size, 0)
-
-        Dim cacheKey As String = If(String.IsNullOrWhiteSpace(p.PhotoPath),
-                                    $"__avatar_{p.Id}",
-                                    Path.GetFullPath(Path.Combine(packageRoot, p.PhotoPath)))
-        If thumbCache.ContainsKey(cacheKey) Then Return thumbCache(cacheKey)
-
         Try
             Dim inPath As String = p.PhotoPath
             If Not String.IsNullOrWhiteSpace(inPath) Then
-                If Not Path.IsPathRooted(inPath) Then inPath = Path.Combine(packageRoot, inPath)
-                Dim abs = Path.GetFullPath(inPath)
-                If File.Exists(abs) Then
-                    Using fs As New FileStream(abs, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)
+                If Not Path.IsPathRooted(inPath) Then inPath = Path.Combine(appRoot, inPath)
+                Dim photoAbs = Path.GetFullPath(inPath)
+                If File.Exists(photoAbs) Then
+                    Using fs As New FileStream(photoAbs, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)
                         Using rawImg As Image = Image.FromStream(fs, False, False)
                             Using tmp As New Bitmap(rawImg)
-                                Dim th = ResizeToThumb(tmp, size, size)
-                                thumbCache(cacheKey) = th
-                                Return th
+                                Return ResizeToThumb(tmp, size, size)
                             End Using
                         End Using
                     End Using
@@ -377,10 +307,7 @@ Public Class Form1
             End If
         Catch
         End Try
-
-        Dim av = MakeAvatar(GetInitials(p.FullName), size, p.Id)
-        thumbCache(cacheKey) = av
-        Return av
+        Return MakeAvatar(GetInitials(p.FullName), size, p.Id)
     End Function
 
     Private Function ResizeToThumb(src As Image, w As Integer, h As Integer) As Image
@@ -406,9 +333,7 @@ Public Class Form1
             Using pen As New Pen(Color.FromArgb(230, Color.White), 2)
                 g.DrawEllipse(pen, 1, 1, size - 3, size - 3)
             End Using
-            Using f As New Font("Segoe UI Semibold",
-                                 If(initials.Length <= 2, size * 0.42F, size * 0.34F),
-                                 FontStyle.Bold, GraphicsUnit.Pixel),
+            Using f As New Font("Segoe UI Semibold", If(initials.Length <= 2, size * 0.42F, size * 0.34F), FontStyle.Bold, GraphicsUnit.Pixel),
                   br As New SolidBrush(Color.White)
                 Dim sz = g.MeasureString(initials, f)
                 Dim pt As New PointF((size - sz.Width) / 2.0F, (size - sz.Height) / 2.0F - 2)
@@ -418,37 +343,28 @@ Public Class Form1
         Return bmp
     End Function
 
+    Private Sub SaveJpeg(dest As String, img As Image, quality As Long)
+        Dim enc = ImageCodecInfo.GetImageEncoders().First(Function(c) c.MimeType = "image/jpeg")
+        Dim ep As New EncoderParameters(1)
+        ep.Param(0) = New EncoderParameter(Encoder.Quality, quality)
+        img.Save(dest, enc, ep)
+    End Sub
+
     Private Function GetInitials(name As String) As String
         If String.IsNullOrWhiteSpace(name) Then Return "?"
         Dim parts = name.Split({" "c}, StringSplitOptions.RemoveEmptyEntries).Take(3)
         Return New String(parts.Select(Function(s) s(0)).ToArray())
     End Function
 
-    '---------------- Seed fallback ----------------
+    ' Seed لو Excel فشل
     Private Sub SeedPeople()
         people.Clear()
         people.AddRange({
             New Person With {.Id = 6, .FullName = "Mohamed Imran", .Email = "mohamed.imran@acmecorp.com"},
             New Person With {.Id = 24, .FullName = "Sherine Salem", .Email = "sherine.s@acmecorp.com"},
             New Person With {.Id = 31, .FullName = "Mostafa Fathy", .Email = "mostafa.f@acmecorp.com"},
-            New Person With {.Id = 42, .FullName = "Iman Mohamed", .Email = "iman.m@acmecorp.com"}
+            New Person With {.Id = 42, .FullName = "Iman Mohamed", .Email = "iman.m@acmecorp.com"},
+            New Person With {.Id = 57, .FullName = "Karim Nabil", .Email = "karim.n@acmecorp.com"}
         })
     End Sub
-
-    '------------- Locate package folder -------------
-    Private Shared Function FindPackageRoot() As String
-        Dim dir As DirectoryInfo = New DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory)
-        For i = 0 To 6
-            Dim cand = Path.Combine(dir.FullName, "package")
-            If Directory.Exists(cand) AndAlso
-               Directory.Exists(Path.Combine(cand, "assets")) AndAlso
-               Directory.Exists(Path.Combine(cand, "data")) AndAlso
-               Directory.Exists(Path.Combine(cand, "photos")) Then
-                Return cand
-            End If
-            If dir.Parent Is Nothing Then Exit For
-            dir = dir.Parent
-        Next
-        Return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "package")
-    End Function
 End Class
