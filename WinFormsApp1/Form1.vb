@@ -51,7 +51,7 @@ Partial Public Class Form1
     ' Header
     Private ReadOnly header As New GradientHeader() With {.Dock = DockStyle.Top, .Height = 96}
     Private ReadOnly appLogoBox As New PictureBox() With {.SizeMode = PictureBoxSizeMode.Zoom}
-    Private ReadOnly titleLbl As New Label() With {.Text = "Members", .AutoSize = True, .ForeColor = Theme.TextMain, .Font = New Font("Segoe UI Semibold", 18, FontStyle.Bold)}
+    Private ReadOnly titleLbl As New Label() With {.Text = "Employees", .AutoSize = True, .ForeColor = Theme.TextMain, .Font = New Font("Segoe UI Semibold", 18, FontStyle.Bold)}
     Private ReadOnly statusLbl As New Label() With {.AutoSize = True, .ForeColor = Color.FromArgb(220, 240, 255)}
 
     ' Search
@@ -238,9 +238,9 @@ Partial Public Class Form1
         Else
             Dim q = query.ToLowerInvariant()
             results = people.
-                Where(Function(p) p.FullName.ToLower().Contains(q) _
-                               OrElse p.Email.ToLower().Contains(q) _
-                               OrElse p.Id.ToString().Contains(q)).
+                Where(Function(p) p.FullName.ToLower().StartsWith(q) _
+                               OrElse p.Email.ToLower().StartsWith(q) _
+                               OrElse p.Id.ToString().StartsWith(q)).
                 OrderBy(Function(p) p.FullName)
         End If
 
@@ -270,43 +270,86 @@ Partial Public Class Form1
     End Function
 
     Private Sub Lv_DrawItem(sender As Object, e As DrawListViewItemEventArgs)
-        e.Graphics.SmoothingMode = SmoothingMode.AntiAlias
-        Dim bounds As New Rectangle(6, e.Bounds.Y + 4, lv.ClientSize.Width - 12, RowHeight - 8)
+        e.Graphics.SmoothingMode = SmoothingMode.HighQuality
+        Dim bounds As New Rectangle(12, e.Bounds.Y + 6, lv.ClientSize.Width - 24, RowHeight - 12)
         Dim bg = If(e.ItemIndex Mod 2 = 0, Theme.CardBg, Theme.CardBgAlt)
-        Using b As New SolidBrush(bg)
-            e.Graphics.FillRectangle(b, bounds)
+        Dim radius As Integer = 18
+
+        ' Draw seamless card with margin between each employee
+        Dim marginTop As Integer = 8
+        Dim marginBottom As Integer = 8
+        Dim cardRect As New Rectangle(bounds.X, bounds.Y + marginTop, bounds.Width, bounds.Height - marginTop - marginBottom)
+
+        Using path As New GraphicsPath()
+            path.AddArc(cardRect.X, cardRect.Y, radius, radius, 180, 90)
+            path.AddArc(cardRect.Right - radius, cardRect.Y, radius, radius, 270, 90)
+            path.AddArc(cardRect.Right - radius, cardRect.Bottom - radius, radius, radius, 0, 90)
+            path.AddArc(cardRect.X, cardRect.Bottom - radius, radius, radius, 90, 90)
+            path.CloseFigure()
+            ' Top gradient
+            Using topGrad As New LinearGradientBrush(
+                New Rectangle(bounds.X, bounds.Y, bounds.Width, bounds.Height \ 2),
+                Color.FromArgb(60, Theme.PrimaryBlue),
+                Color.Transparent,
+                LinearGradientMode.Vertical)
+                e.Graphics.FillPath(topGrad, path)
+            End Using
+            ' Bottom gradient
+            Using bottomGrad As New LinearGradientBrush(
+                New Rectangle(bounds.X, bounds.Y + bounds.Height \ 2, bounds.Width, bounds.Height \ 2),
+                Color.Transparent,
+                Color.FromArgb(40, Theme.Navy),
+                LinearGradientMode.Vertical)
+                e.Graphics.FillPath(bottomGrad, path)
+            End Using
+            ' Card background
+            Using b As New SolidBrush(bg)
+                e.Graphics.FillPath(b, path)
+            End Using
         End Using
+
+        ' Smoother hover effect
+        If (e.State And ListViewItemStates.Selected) = ListViewItemStates.Selected Then
+            Using b As New SolidBrush(Color.FromArgb(60, Theme.PrimaryBlue))
+                e.Graphics.FillRectangle(b, bounds)
+            End Using
+        End If
 
         Dim p = TryCast(e.Item.Tag, Person)
         If p Is Nothing Then Return
 
-        ' Thumbnail (circle)
+        ' Avatar (larger, circular, smooth)
         Dim img = imgs.Images(e.Item.ImageKey)
-        Dim avatarRect As New Rectangle(bounds.X + 10, bounds.Y + 8, 48, 48)
+        Dim avatarRect As New Rectangle(bounds.X + 16, bounds.Y + 8, 56, 56)
         Using gp As New GraphicsPath()
             gp.AddEllipse(avatarRect)
             e.Graphics.SetClip(gp)
             e.Graphics.DrawImage(img, avatarRect)
             e.Graphics.ResetClip()
-            Using pn As New Pen(Color.FromArgb(80, Color.White), 1.5F)
+            Using pn As New Pen(Color.FromArgb(120, Color.White), 2.5F)
                 e.Graphics.DrawEllipse(pn, avatarRect)
             End Using
         End Using
 
-        ' Texts
-        Dim namePt As New Point(avatarRect.Right + 12, bounds.Y + 10)
-        Dim mailPt As New Point(avatarRect.Right + 12, bounds.Y + 32)
-        Using nameFont As New Font("Segoe UI Semibold", 11, FontStyle.Bold),
-              mailFont As New Font("Segoe UI", 9)
+        ' Name (bold, larger)
+        Dim namePt As New Point(avatarRect.Right + 18, bounds.Y + 14)
+        Using nameFont As New Font("Segoe UI Semibold", 13, FontStyle.Bold)
             TextRenderer.DrawText(e.Graphics, p.FullName, nameFont, namePt, Theme.TextMain, TextFormatFlags.NoPadding)
-            TextRenderer.DrawText(e.Graphics, p.Email, mailFont, mailPt, Theme.TextMuted, TextFormatFlags.NoPadding)
         End Using
 
-        ' ID right
+        ' Email (only if searching)
+        If Not String.IsNullOrWhiteSpace(txtSearch.Text) Then
+            Dim mailPt As New Point(avatarRect.Right + 18, bounds.Y + 38)
+            Using mailFont As New Font("Segoe UI", 10)
+                TextRenderer.DrawText(e.Graphics, p.Email, mailFont, mailPt, Theme.TextMuted, TextFormatFlags.NoPadding)
+            End Using
+        End If
+
+        ' ID (right aligned, muted)
         Dim idStr = $"ID {p.Id}"
-        Using small As New Font("Segoe UI", 9, FontStyle.Regular)
+        Using small As New Font("Segoe UI", 10, FontStyle.Regular)
             Dim sz = TextRenderer.MeasureText(idStr, small)
-            Dim idPt As New Point(bounds.Right - sz.Width - 12, bounds.Y + (RowHeight - sz.Height) \ 2)
+            Dim idPt As New Point(bounds.Right - sz.Width - 18, bounds.Y + (RowHeight - sz.Height) \ 2)
             TextRenderer.DrawText(e.Graphics, idStr, small, idPt, Theme.TextMuted, TextFormatFlags.NoPadding)
         End Using
     End Sub
