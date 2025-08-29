@@ -6,15 +6,28 @@ Imports System.Windows.Forms
 Imports System.IO
 Imports System.Linq
 Imports ClosedXML.Excel
+Imports System.Runtime.InteropServices
+
+' تفعيل دعم الشاشات عالية الدقة
+Module DPIHelper
+    ' تفعيل دعم الشاشات عالية الدقة
+    <DllImport("user32.dll")>
+    Private Function SetProcessDPIAware() As Boolean
+    End Function
+
+    Sub EnableHighDPI()
+        SetProcessDPIAware()
+    End Sub
+End Module
 
 '================ Theme =================
 Module Theme
     Public ReadOnly Navy As Color = ColorTranslator.FromHtml("#0C2E4E")
     Public ReadOnly PrimaryBlue As Color = ColorTranslator.FromHtml("#0066A6")
-    Public ReadOnly CardBg As Color = Color.FromArgb(18, 46, 78)
-    Public ReadOnly CardBgAlt As Color = Color.FromArgb(22, 54, 91)
-    Public ReadOnly TextMain As Color = Color.White
-    Public ReadOnly TextMuted As Color = Color.FromArgb(190, 220, 240)
+    Public ReadOnly CardBg As Color = Color.White  ' Changed from Color.FromArgb(18, 46, 78)
+    Public ReadOnly CardBgAlt As Color = Color.White  ' Changed from Color.FromArgb(22, 54, 91)
+    Public ReadOnly TextMain As Color = Color.Blue  ' Changed from Color.White
+    Public ReadOnly TextMuted As Color = Color.Black  ' Changed from Color.FromArgb(190, 220, 240)
 End Module
 
 '================ Data model =================
@@ -30,8 +43,9 @@ Friend Class GradientHeader
     Inherits Panel
     Protected Overrides Sub OnPaint(e As PaintEventArgs)
         MyBase.OnPaint(e)
-        Using lg As New LinearGradientBrush(Me.ClientRectangle, Theme.Navy, Theme.PrimaryBlue, 0.0F)
-            e.Graphics.FillRectangle(lg, Me.ClientRectangle)
+        ' تغيير من التدرج الأزرق إلى خلفية بيضاء
+        Using b As New SolidBrush(Color.White)
+            e.Graphics.FillRectangle(b, Me.ClientRectangle)
         End Using
     End Sub
 End Class
@@ -51,8 +65,8 @@ Partial Public Class Form1
     ' Header
     Private ReadOnly header As New GradientHeader() With {.Dock = DockStyle.Top, .Height = 96}
     Private ReadOnly appLogoBox As New PictureBox() With {.SizeMode = PictureBoxSizeMode.Zoom}
-    Private ReadOnly titleLbl As New Label() With {.Text = "Employees", .AutoSize = True, .ForeColor = Theme.TextMain, .Font = New Font("Segoe UI Semibold", 18, FontStyle.Bold)}
-    Private ReadOnly statusLbl As New Label() With {.AutoSize = True, .ForeColor = Color.FromArgb(220, 240, 255)}
+    Private ReadOnly titleLbl As New Label() With {.Text = "Employees", .AutoSize = True, .ForeColor = Color.Black, .Font = New Font("Segoe UI Semibold", 18, FontStyle.Bold)}  ' تغيير لون النص إلى أسود
+    Private ReadOnly statusLbl As New Label() With {.AutoSize = True, .ForeColor = Color.Gray}  ' تغيير لون النص إلى رمادي
 
     ' Search
     Private ReadOnly txtSearch As New TextBox() With {.Width = 360}
@@ -70,7 +84,7 @@ Partial Public Class Form1
         .TextAlign = ContentAlignment.MiddleCenter
     }
     Private ReadOnly imgs As New ImageList() With {.ImageSize = New Size(48, 48), .ColorDepth = ColorDepth.Depth32Bit}
-    Private RowHeight As Integer = 64
+    'Private RowHeight As Integer = 64 ' Changed to a property for dynamic sizing
 
     ' Data
     Private ReadOnly people As New List(Of Person)()
@@ -83,23 +97,37 @@ Partial Public Class Form1
     Private ReadOnly assetsDir As String = Path.Combine(packageRoot, "assets")
 
     Public Sub New()
+        ' تفعيل DPI Awareness
+        If Environment.OSVersion.Version.Major >= 6 Then
+            DPIHelper.EnableHighDPI()
+        End If
+
         InitializeComponent()
 
-        ' <<< تم تعديل هذا السطر ليصبح اسم الشركة فقط
         Me.Text = "Flight Assist"
+        Me.BackColor = Color.White
 
-        Me.BackColor = Theme.CardBg
-        Me.Size = New Size(880, 560)
+        ' استخدام نسب مئوية بدلاً من أحجام ثابتة
+        Dim screenSize = Screen.PrimaryScreen.WorkingArea.Size
+        Me.Size = New Size(Math.Min(880, CInt(screenSize.Width * 0.7)),
+                          Math.Min(560, CInt(screenSize.Height * 0.8)))
+
         Me.StartPosition = FormStartPosition.CenterScreen
         Me.Font = New Font("Segoe UI", 10.0F, FontStyle.Regular, GraphicsUnit.Point)
+
+        ' تفعيل التحجيم التلقائي
+        Me.AutoScaleMode = AutoScaleMode.Dpi
+        Me.AutoScaleDimensions = New SizeF(96.0F, 96.0F)
+
+        ' جعل النافذة قابلة لتغيير الحجم
+        Me.FormBorderStyle = FormBorderStyle.Sizable
+        Me.MinimumSize = New Size(600, 400)
 
         ' This code block loads the window icon from favicon.ico
         Try
             Dim iconPath As String = Path.Combine(assetsDir, "favicon.ico")
             If File.Exists(iconPath) Then
                 Me.Icon = New Icon(iconPath)
-            Else
-                Console.WriteLine($"Warning: favicon.ico not found at {iconPath}. Default icon will be used for the form.")
             End If
         Catch ex As Exception
             Console.WriteLine($"Error loading form icon: {ex.Message}")
@@ -140,11 +168,15 @@ Partial Public Class Form1
     End Function
 
     Private Sub BuildHeader()
+        ' جعل ارتفاع الهيدر نسبي
+        header.Height = Math.Max(96, CInt(Me.Height * 0.15))
         Controls.Add(header)
 
-        ' Setup the logo inside the header using logo.png
-        appLogoBox.Size = New Size(40, 40)
-        appLogoBox.Location = New Point(20, 18)
+        ' تحجيم اللوجو حسب حجم الهيدر
+        Dim logoSize As Integer = Math.Min(40, header.Height - 20)
+        appLogoBox.Size = New Size(logoSize, logoSize)
+        appLogoBox.Location = New Point(20, (header.Height - logoSize) \ 2)
+
         Try
             Dim logoPngPath As String = Path.Combine(assetsDir, "logo.png")
             If File.Exists(logoPngPath) Then
@@ -155,18 +187,24 @@ Partial Public Class Form1
         End Try
         header.Controls.Add(appLogoBox)
 
-        ' Adjust title position to make room for the logo
-        titleLbl.Location = New Point(appLogoBox.Right + 12, 20)
+        ' تموضع العنوان نسبياً
+        titleLbl.Location = New Point(appLogoBox.Right + 12, (header.Height - 40) \ 2)
+        ' تحجيم الخط حسب حجم الشاشة
+        Dim fontSize As Single = Math.Max(14, Math.Min(20, Me.Width / 50))
+        titleLbl.Font = New Font("Segoe UI Semibold", fontSize, FontStyle.Bold)
         header.Controls.Add(titleLbl)
 
-        ' Adjust search box position
+        ' تحجيم مربع البحث نسبياً
         txtSearch.PlaceholderText = "Search by name, email, or ID..."
-        txtSearch.Location = New Point(22, 60)
-        txtSearch.Width = 340
+        txtSearch.Location = New Point(22, header.Height - 30)
+        txtSearch.Width = Math.Min(340, Me.Width - 200)
         txtSearch.BorderStyle = BorderStyle.FixedSingle
+        txtSearch.Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right
         header.Controls.Add(txtSearch)
 
-        statusLbl.Location = New Point(380, 64)
+        ' تموضع نص الحالة
+        statusLbl.Location = New Point(txtSearch.Right + 20, header.Height - 26)
+        statusLbl.Anchor = AnchorStyles.Top Or AnchorStyles.Right
         header.Controls.Add(statusLbl)
     End Sub
 
@@ -175,16 +213,31 @@ Partial Public Class Form1
         lv.Size = New Size(ClientSize.Width - 32, ClientSize.Height - header.Height - 28)
         lv.Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right Or AnchorStyles.Bottom
         lv.SmallImageList = imgs
-        lv.BackColor = Theme.CardBg
+        lv.BackColor = Color.White
         Controls.Add(lv)
 
         noResultsLbl.Bounds = lv.Bounds
         noResultsLbl.Anchor = lv.Anchor
+        noResultsLbl.BackColor = Color.White
+        noResultsLbl.ForeColor = Color.Black
         Controls.Add(noResultsLbl)
         noResultsLbl.BringToFront()
 
         AddHandler lv.DrawItem, AddressOf Lv_DrawItem
-        AddHandler lv.Resize, Sub() lv.Invalidate()
+        AddHandler lv.Resize, Sub()
+                                  lv.Invalidate()
+                                  ' تحديث حجم الصور حسب حجم القائمة
+                                  Dim newImageSize As Integer = Math.Max(32, Math.Min(64, lv.Width \ 15))
+                                  If imgs.ImageSize.Width <> newImageSize Then
+                                      imgs.ImageSize = New Size(newImageSize, newImageSize)
+                                      PerformSearch(txtSearch.Text)  ' إعادة تحميل الصور
+                                  End If
+                              End Sub
+
+        ' إضافة معالج لتغيير حجم النموذج
+        AddHandler Me.Resize, Sub()
+                                  BuildHeader()  ' إعادة بناء الهيدر عند تغيير الحجم
+                              End Sub
     End Sub
 
     Private Sub BindEvents()
@@ -454,4 +507,10 @@ Partial Public Class Form1
             New Person With {.Id = 57, .FullName = "Karim Nabil", .Email = "karim.n@acmecorp.com"}
         })
     End Sub
+    ' تغيير من متغير ثابت إلى خاصية محسوبة
+    Private ReadOnly Property RowHeight As Integer
+        Get
+            Return Math.Max(64, CInt(Me.Height / 8))  ' ارتفاع نسبي حسب حجم النافذة
+        End Get
+    End Property
 End Class
