@@ -8,9 +8,10 @@ Imports System.Linq
 Imports ClosedXML.Excel
 Imports System.Runtime.InteropServices
 
-' تفعيل دعم الشاشات عالية الدقة
+' Helper module for DPI awareness.
 Module DPIHelper
-    ' تفعيل دعم الشاشات عالية الدقة
+    ' P/Invoke to set the process as DPI aware.
+    ' This makes the application look crisp on high-resolution screens.
     <DllImport("user32.dll")>
     Private Function SetProcessDPIAware() As Boolean
     End Function
@@ -21,16 +22,18 @@ Module DPIHelper
 End Module
 
 '================ Theme =================
+' Centralized color theme for easy UI adjustments.
 Module Theme
     Public ReadOnly Navy As Color = ColorTranslator.FromHtml("#0C2E4E")
     Public ReadOnly PrimaryBlue As Color = ColorTranslator.FromHtml("#0066A6")
-    Public ReadOnly CardBg As Color = Color.White  ' Changed from Color.FromArgb(18, 46, 78)
-    Public ReadOnly CardBgAlt As Color = Color.White  ' Changed from Color.FromArgb(22, 54, 91)
-    Public ReadOnly TextMain As Color = Color.Blue  ' Changed from Color.White
-    Public ReadOnly TextMuted As Color = Color.Black  ' Changed from Color.FromArgb(190, 220, 240)
+    Public ReadOnly CardBg As Color = Color.White  ' Changed from a dark blue for a lighter, modern look.
+    Public ReadOnly CardBgAlt As Color = Color.White ' Also changed to white to simplify the list view.
+    Public ReadOnly TextMain As Color = Color.Blue ' Changed from White to have better contrast on the new white background.
+    Public ReadOnly TextMuted As Color = Color.Black ' Changed from a light blue for better readability.
 End Module
 
 '================ Data model =================
+' Simple class to hold person data.
 Public Class Person
     Public Property Id As Integer
     Public Property FullName As String
@@ -39,40 +42,42 @@ Public Class Person
 End Class
 
 '================ UI helpers =================
+' A custom panel for the header.
 Friend Class GradientHeader
     Inherits Panel
     Protected Overrides Sub OnPaint(e As PaintEventArgs)
         MyBase.OnPaint(e)
-        ' تغيير من التدرج الأزرق إلى خلفية بيضاء
+        ' Switched from a gradient to a solid white background for a cleaner design.
         Using b As New SolidBrush(Color.White)
             e.Graphics.FillRectangle(b, Me.ClientRectangle)
         End Using
     End Sub
 End Class
 
+' Custom ListView with double buffering enabled to prevent flickering during redraw.
 Friend Class SmoothListView
     Inherits ListView
     Public Sub New()
         Me.DoubleBuffered = True
-        Me.OwnerDraw = True
-        Me.HeaderStyle = ColumnHeaderStyle.None
+        Me.OwnerDraw = True ' We'll be handling the drawing of items ourselves.
+        Me.HeaderStyle = ColumnHeaderStyle.None ' No column headers needed.
         Me.View = View.List
     End Sub
 End Class
 
 '================ Main Form =================
 Partial Public Class Form1
-    ' Header
+    ' Header controls
     Private ReadOnly header As New GradientHeader() With {.Dock = DockStyle.Top, .Height = 96}
     Private ReadOnly appLogoBox As New PictureBox() With {.SizeMode = PictureBoxSizeMode.Zoom}
-    Private ReadOnly titleLbl As New Label() With {.Text = "Employees", .AutoSize = True, .ForeColor = Color.Black, .Font = New Font("Segoe UI Semibold", 18, FontStyle.Bold)}  ' تغيير لون النص إلى أسود
-    Private ReadOnly statusLbl As New Label() With {.AutoSize = True, .ForeColor = Color.Gray}  ' تغيير لون النص إلى رمادي
+    Private ReadOnly titleLbl As New Label() With {.Text = "Employees", .AutoSize = True, .ForeColor = Color.Black, .Font = New Font("Segoe UI Semibold", 18, FontStyle.Bold)}
+    Private ReadOnly statusLbl As New Label() With {.AutoSize = True, .ForeColor = Color.Gray}
 
-    ' Search
+    ' Search controls
     Private ReadOnly txtSearch As New TextBox() With {.Width = 360}
-    Private ReadOnly debounce As New System.Windows.Forms.Timer() With {.Interval = 500}
+    Private ReadOnly debounce As New System.Windows.Forms.Timer() With {.Interval = 500} ' Delays search to avoid firing on every keystroke.
 
-    ' List
+    ' List controls
     Private ReadOnly lv As New SmoothListView()
     Private ReadOnly noResultsLbl As New Label() With {
         .Text = "No results found.",
@@ -84,7 +89,6 @@ Partial Public Class Form1
         .TextAlign = ContentAlignment.MiddleCenter
     }
     Private ReadOnly imgs As New ImageList() With {.ImageSize = New Size(48, 48), .ColorDepth = ColorDepth.Depth32Bit}
-    'Private RowHeight As Integer = 64 ' Changed to a property for dynamic sizing
 
     ' Data
     Private ReadOnly people As New List(Of Person)()
@@ -97,7 +101,7 @@ Partial Public Class Form1
     Private ReadOnly assetsDir As String = Path.Combine(packageRoot, "assets")
 
     Public Sub New()
-        ' تفعيل DPI Awareness
+        ' Enable DPI Awareness for proper scaling on high-resolution screens.
         If Environment.OSVersion.Version.Major >= 6 Then
             DPIHelper.EnableHighDPI()
         End If
@@ -107,19 +111,19 @@ Partial Public Class Form1
         Me.Text = "Flight Assist"
         Me.BackColor = Color.White
 
-        ' استخدام نسب مئوية بدلاً من أحجام ثابتة
+        ' Use percentages of the screen size for the initial form dimensions for better adaptability.
         Dim screenSize = Screen.PrimaryScreen.WorkingArea.Size
         Me.Size = New Size(Math.Min(880, CInt(screenSize.Width * 0.7)),
-                          Math.Min(560, CInt(screenSize.Height * 0.8)))
+                             Math.Min(560, CInt(screenSize.Height * 0.8)))
 
         Me.StartPosition = FormStartPosition.CenterScreen
         Me.Font = New Font("Segoe UI", 10.0F, FontStyle.Regular, GraphicsUnit.Point)
 
-        ' تفعيل التحجيم التلقائي
+        ' Enable automatic scaling based on DPI.
         Me.AutoScaleMode = AutoScaleMode.Dpi
         Me.AutoScaleDimensions = New SizeF(96.0F, 96.0F)
 
-        ' جعل النافذة قابلة لتغيير الحجم
+        ' Make the window resizable.
         Me.FormBorderStyle = FormBorderStyle.Sizable
         Me.MinimumSize = New Size(600, 400)
 
@@ -137,7 +141,7 @@ Partial Public Class Form1
         BuildList()
         BindEvents()
 
-        ' Ensure directories exist
+        ' Ensure the necessary directories exist before trying to access them.
         Directory.CreateDirectory(Path.Combine(projectRoot, "data"))
         Directory.CreateDirectory(photosDir)
 
@@ -146,18 +150,21 @@ Partial Public Class Form1
                 Throw New FileNotFoundException("Excel file not found", excelPath)
             End If
             LoadFromExcel(excelPath)
-            EnsurePhotosAndPaths(excelPath)
+            ' EnsurePhotosAndPaths(excelPath) ' This method is currently empty, keeping the call just in case.
             statusLbl.Text = $"Loaded: {people.Count} people"
         Catch ex As Exception
+            ' If Excel fails to load, fall back to sample data so the app can still run.
             MessageBox.Show("Excel load error: " & ex.Message & vbCrLf &
                             "The program will run with sample data.", "Excel Error", MessageBoxButtons.OK, MessageBoxIcon.Warning)
             SeedPeople()
             statusLbl.Text = $"Loaded: {people.Count} (seed)"
         End Try
 
-        PerformSearch("")
+        PerformSearch("") ' Initial load of all people.
     End Sub
 
+    ' Helper to find the project's root directory by looking for the .sln file.
+    ' This makes pathing to assets more reliable.
     Private Shared Function FindProjectRoot(startPath As String) As String
         Dim dir = New DirectoryInfo(startPath)
         ' Search for the solution file (.sln) to identify the project root
@@ -168,11 +175,11 @@ Partial Public Class Form1
     End Function
 
     Private Sub BuildHeader()
-        ' جعل ارتفاع الهيدر نسبي
+        ' Make the header height responsive to the form's size.
         header.Height = Math.Max(96, CInt(Me.Height * 0.15))
         Controls.Add(header)
 
-        ' تحجيم اللوجو حسب حجم الهيدر
+        ' Scale the logo based on the header's height.
         Dim logoSize As Integer = Math.Min(40, header.Height - 20)
         appLogoBox.Size = New Size(logoSize, logoSize)
         appLogoBox.Location = New Point(20, (header.Height - logoSize) \ 2)
@@ -187,14 +194,14 @@ Partial Public Class Form1
         End Try
         header.Controls.Add(appLogoBox)
 
-        ' تموضع العنوان نسبياً
-        titleLbl.Location = New Point(appLogoBox.Right + 12, 16)  ' Changed Y position to 16 to move it higher
-        ' تحجيم الخط حسب حجم الشاشة
+        ' Position the title label relatively.
+        titleLbl.Location = New Point(appLogoBox.Right + 12, 16) ' Moved Y position up a bit.
+        ' Scale the font size based on the form's width.
         Dim fontSize As Single = Math.Max(14, Math.Min(20, Me.Width / 50))
         titleLbl.Font = New Font("Segoe UI Semibold", fontSize, FontStyle.Bold)
         header.Controls.Add(titleLbl)
 
-        ' تحجيم مربع البحث نسبياً
+        ' Make the search box width responsive.
         txtSearch.PlaceholderText = "Search by name, email, or ID..."
         txtSearch.Location = New Point(22, header.Height - 30)
         txtSearch.Width = Math.Min(340, Me.Width - 200)
@@ -202,7 +209,7 @@ Partial Public Class Form1
         txtSearch.Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right
         header.Controls.Add(txtSearch)
 
-        ' تموضع نص الحالة
+        ' Position the status label.
         statusLbl.Location = New Point(txtSearch.Right + 20, header.Height - 26)
         statusLbl.Anchor = AnchorStyles.Top Or AnchorStyles.Right
         header.Controls.Add(statusLbl)
@@ -216,6 +223,7 @@ Partial Public Class Form1
         lv.BackColor = Color.White
         Controls.Add(lv)
 
+        ' Position the "No Results" label to perfectly cover the list view when needed.
         noResultsLbl.Bounds = lv.Bounds
         noResultsLbl.Anchor = lv.Anchor
         noResultsLbl.BackColor = Color.White
@@ -225,22 +233,25 @@ Partial Public Class Form1
 
         AddHandler lv.DrawItem, AddressOf Lv_DrawItem
         AddHandler lv.Resize, Sub()
+                                  ' Redraw the list on resize.
                                   lv.Invalidate()
-                                  ' تحديث حجم الصور حسب حجم القائمة
+                                  ' Update image size dynamically based on the list view's width.
                                   Dim newImageSize As Integer = Math.Max(32, Math.Min(64, lv.Width \ 15))
                                   If imgs.ImageSize.Width <> newImageSize Then
                                       imgs.ImageSize = New Size(newImageSize, newImageSize)
-                                      PerformSearch(txtSearch.Text)  ' إعادة تحميل الصور
+                                      PerformSearch(txtSearch.Text) ' Reload images to reflect the new size.
                                   End If
                               End Sub
 
-        ' إضافة معالج لتغيير حجم النموذج
+        ' Add a handler to rebuild the header when the form is resized.
         AddHandler Me.Resize, Sub()
-                                  BuildHeader()  ' إعادة بناء الهيدر عند تغيير الحجم
+                                  ' This ensures controls inside the header reposition correctly.
+                                  BuildHeader()
                               End Sub
     End Sub
 
     Private Sub BindEvents()
+        ' Use a debouncer for the search text box to prevent lagging.
         AddHandler txtSearch.TextChanged,
             Sub()
                 debounce.Stop()
@@ -249,6 +260,7 @@ Partial Public Class Form1
         AddHandler debounce.Tick, AddressOf DebouncedSearch
     End Sub
 
+    ' This runs after the user stops typing for a moment.
     Private Sub DebouncedSearch(sender As Object, e As EventArgs)
         debounce.Stop()
         PerformSearch(txtSearch.Text.Trim())
@@ -258,7 +270,7 @@ Partial Public Class Form1
         people.Clear()
         Using wb As New XLWorkbook(path)
             Dim ws = wb.Worksheet("People")
-            Dim r As Integer = 2
+            Dim r As Integer = 2 ' Start from the second row to skip headers.
             While Not ws.Cell(r, 1).IsEmpty()
                 Dim p As New Person With {
                     .Id = ws.Cell(r, 1).GetValue(Of Integer)(),
@@ -278,24 +290,27 @@ Partial Public Class Form1
     End Sub
 
     Private Sub PerformSearch(query As String)
-        lv.BeginUpdate()
+        lv.BeginUpdate() ' Prevents flickering while updating the list.
         lv.Items.Clear()
         imgs.Images.Clear()
 
         Dim results As IEnumerable(Of Person)
 
         If String.IsNullOrWhiteSpace(query) Then
+            ' If search is empty, show all people.
             results = people.OrderBy(Function(p) p.FullName)
             statusLbl.Text = $"Loaded: {people.Count} people"
         ElseIf Not IsQueryAllowed(query) Then
+            ' Basic query validation failed.
             results = Enumerable.Empty(Of Person)()
             statusLbl.Text = "No matches"
         Else
+            ' Filter people based on the query.
             Dim q = query.ToLowerInvariant()
             results = people.
                 Where(Function(p) p.FullName.ToLower().StartsWith(q) _
-                               OrElse p.Email.ToLower().StartsWith(q) _
-                               OrElse p.Id.ToString().StartsWith(q)).
+                              OrElse p.Email.ToLower().StartsWith(q) _
+                              OrElse p.Id.ToString().StartsWith(q)).
                 OrderBy(Function(p) p.FullName)
 
             ' Show count of matches in status label
@@ -307,6 +322,7 @@ Partial Public Class Form1
             End If
         End If
 
+        ' Populate the ListView with search results.
         For Each p In results
             Dim key As String = p.Id.ToString()
             imgs.Images.Add(key, GetThumb(p))
@@ -314,6 +330,7 @@ Partial Public Class Form1
             lv.Items.Add(it)
         Next
 
+        ' Show or hide the "No results" message.
         If lv.Items.Count = 0 AndAlso Not String.IsNullOrWhiteSpace(query) Then
             noResultsLbl.Text = $"No results found for '{query}'"
             noResultsLbl.Visible = True
@@ -322,34 +339,39 @@ Partial Public Class Form1
         End If
 
         lv.EndUpdate()
-        lv.Invalidate()
+        lv.Invalidate() ' Force a repaint.
     End Sub
 
+    ' Basic validation to prevent overly long or complex queries.
     Private Function IsQueryAllowed(q As String) As Boolean
         If q.Length < 1 OrElse q.Length > 30 Then Return False
         If q.Split({" "c}, StringSplitOptions.RemoveEmptyEntries).Length > 4 Then Return False
+        ' Allow letters, numbers, and common email/path characters.
         If Not Regex.IsMatch(q, "^[\p{L}\p{Nd}\s@._+\-]+$") Then Return False
         Return True
     End Function
 
+    ' Custom drawing logic for each item in the ListView.
     Private Sub Lv_DrawItem(sender As Object, e As DrawListViewItemEventArgs)
         e.Graphics.SmoothingMode = SmoothingMode.HighQuality
         Dim bounds As New Rectangle(12, e.Bounds.Y + 6, lv.ClientSize.Width - 24, RowHeight - 12)
         Dim bg = If(e.ItemIndex Mod 2 = 0, Theme.CardBg, Theme.CardBgAlt)
-        Dim radius As Integer = 18
+        Dim radius As Integer = 18 ' For rounded corners.
 
-        ' Draw seamless card with margin between each employee
+        ' Create a margin between each employee card for better visual separation.
         Dim marginTop As Integer = 8
         Dim marginBottom As Integer = 8
         Dim cardRect As New Rectangle(bounds.X, bounds.Y + marginTop, bounds.Width, bounds.Height - marginTop - marginBottom)
 
+        ' Draw the rounded rectangle card shape.
         Using path As New GraphicsPath()
             path.AddArc(cardRect.X, cardRect.Y, radius, radius, 180, 90)
             path.AddArc(cardRect.Right - radius, cardRect.Y, radius, radius, 270, 90)
             path.AddArc(cardRect.Right - radius, cardRect.Bottom - radius, radius, radius, 0, 90)
             path.AddArc(cardRect.X, cardRect.Bottom - radius, radius, radius, 90, 90)
             path.CloseFigure()
-            ' Top gradient
+
+            ' subtle top gradient.
             Using topGrad As New LinearGradientBrush(
                 New Rectangle(bounds.X, bounds.Y, bounds.Width, bounds.Height \ 2),
                 Color.FromArgb(60, Theme.PrimaryBlue),
@@ -357,7 +379,8 @@ Partial Public Class Form1
                 LinearGradientMode.Vertical)
                 e.Graphics.FillPath(topGrad, path)
             End Using
-            ' Bottom gradient
+
+            ' subtle bottom gradient.
             Using bottomGrad As New LinearGradientBrush(
                 New Rectangle(bounds.X, bounds.Y + bounds.Height \ 2, bounds.Width, bounds.Height \ 2),
                 Color.Transparent,
@@ -365,13 +388,14 @@ Partial Public Class Form1
                 LinearGradientMode.Vertical)
                 e.Graphics.FillPath(bottomGrad, path)
             End Using
-            ' Card background
+
+            ' Card background color.
             Using b As New SolidBrush(bg)
                 e.Graphics.FillPath(b, path)
             End Using
         End Using
 
-        ' Smoother hover effect
+        ' Highlight the selected item.
         If (e.State And ListViewItemStates.Selected) = ListViewItemStates.Selected Then
             Using b As New SolidBrush(Color.FromArgb(60, Theme.PrimaryBlue))
                 e.Graphics.FillRectangle(b, bounds)
@@ -381,26 +405,27 @@ Partial Public Class Form1
         Dim p = TryCast(e.Item.Tag, Person)
         If p Is Nothing Then Return
 
-        ' Avatar (larger, circular, smooth)
+        ' Draw the circular avatar.
         Dim img = imgs.Images(e.Item.ImageKey)
         Dim avatarRect As New Rectangle(bounds.X + 16, bounds.Y + 8, 56, 56)
         Using gp As New GraphicsPath()
             gp.AddEllipse(avatarRect)
-            e.Graphics.SetClip(gp)
+            e.Graphics.SetClip(gp) ' Clip the drawing region to the circle.
             e.Graphics.DrawImage(img, avatarRect)
             e.Graphics.ResetClip()
+            ' Add a subtle border to the avatar.
             Using pn As New Pen(Color.FromArgb(120, Color.White), 2.5F)
                 e.Graphics.DrawEllipse(pn, avatarRect)
             End Using
         End Using
 
-        ' Name (bold, larger)
+        ' Draw the person's name.
         Dim namePt As New Point(avatarRect.Right + 18, bounds.Y + 14)
         Using nameFont As New Font("Segoe UI Semibold", 13, FontStyle.Bold)
             TextRenderer.DrawText(e.Graphics, p.FullName, nameFont, namePt, Theme.TextMain, TextFormatFlags.NoPadding)
         End Using
 
-        ' Email (only if searching)
+        ' Only show the email when a search is active to keep the main list clean.
         If Not String.IsNullOrWhiteSpace(txtSearch.Text) Then
             Dim mailPt As New Point(avatarRect.Right + 18, bounds.Y + 38)
             Using mailFont As New Font("Segoe UI", 10)
@@ -408,7 +433,7 @@ Partial Public Class Form1
             End Using
         End If
 
-        ' ID (right aligned, muted)
+        ' Draw the ID, right-aligned.
         Dim idStr = $"ID {p.Id}"
         Using small As New Font("Segoe UI", 10, FontStyle.Regular)
             Dim sz = TextRenderer.MeasureText(idStr, small)
@@ -424,9 +449,10 @@ Partial Public Class Form1
         Try
             Dim photoPath As String = p.PhotoPath
             If Not String.IsNullOrWhiteSpace(photoPath) Then
+                ' Handle both absolute and relative paths.
                 Dim fullPath = If(Path.IsPathRooted(photoPath), photoPath, Path.Combine(packageRoot, photoPath))
                 If File.Exists(fullPath) Then
-                    ' استخدم الصورة من اللينك
+                    ' Load the image from the specified path.
                     Dim fileBytes = File.ReadAllBytes(fullPath)
                     Using ms As New MemoryStream(fileBytes)
                         Using rawImg As Image = Image.FromStream(ms)
@@ -436,9 +462,11 @@ Partial Public Class Form1
                 End If
             End If
         Catch ex As Exception
+            ' Log error but don't crash the app.
             Console.WriteLine($"Error loading photo for {p.FullName}: {ex.Message}")
         End Try
 
+        ' If the specified photo doesn't exist, fall back to a default profile picture.
         Dim defaultProfilePath As String = Path.Combine(photosDir, "profile.png")
         If File.Exists(defaultProfilePath) Then
             Dim fileBytes = File.ReadAllBytes(defaultProfilePath)
@@ -448,9 +476,12 @@ Partial Public Class Form1
                 End Using
             End Using
         End If
+
+        ' Final fallback: return an empty bitmap if no images are found.
         Return New Bitmap(size, size)
     End Function
 
+    ' High-quality image resizing function.
     Private Function ResizeToThumb(src As Image, w As Integer, h As Integer) As Image
         Dim bmp As New Bitmap(w, h)
         Using g = Graphics.FromImage(bmp)
@@ -462,10 +493,12 @@ Partial Public Class Form1
         Return bmp
     End Function
 
+    ' Generates a colored circle with initials, used as a placeholder avatar.
     Private Function MakeAvatar(initials As String, size As Integer, key As Integer) As Image
         Dim bmp As New Bitmap(size, size)
         Using g = Graphics.FromImage(bmp)
             g.SmoothingMode = SmoothingMode.AntiAlias
+            ' Use a seeded random to get consistent colors for the same person.
             Dim rnd As New Random(key Xor &H2EA3F2)
             Dim c As Color = Color.FromArgb(255, 90 + rnd.Next(110), 90 + rnd.Next(110), 90 + rnd.Next(110))
             Using b As New SolidBrush(c)
@@ -474,6 +507,7 @@ Partial Public Class Form1
             Using pen As New Pen(Color.FromArgb(230, Color.White), 2)
                 g.DrawEllipse(pen, 1, 1, size - 3, size - 3)
             End Using
+            ' Dynamically adjust font size based on the number of initials.
             Using f As New Font("Segoe UI Semibold", If(initials.Length <= 2, size * 0.42F, size * 0.34F), FontStyle.Bold, GraphicsUnit.Pixel),
                   br As New SolidBrush(Color.White)
                 Dim sz = g.MeasureString(initials, f)
@@ -491,12 +525,14 @@ Partial Public Class Form1
         img.Save(dest, enc, ep)
     End Sub
 
+    ' Extracts initials from a full name (e.g., "John Fitzgerald Kennedy" -> "JFK").
     Private Function GetInitials(name As String) As String
         If String.IsNullOrWhiteSpace(name) Then Return "?"
         Dim parts = name.Split({" "c}, StringSplitOptions.RemoveEmptyEntries).Take(3)
         Return New String(parts.Select(Function(s) s(0)).ToArray())
     End Function
 
+    ' Sample data used if the Excel file can't be loaded.
     Private Sub SeedPeople()
         people.Clear()
         people.AddRange({
@@ -507,10 +543,12 @@ Partial Public Class Form1
             New Person With {.Id = 57, .FullName = "Karim Nabil", .Email = "karim.n@acmecorp.com"}
         })
     End Sub
-    ' تغيير من متغير ثابت إلى خاصية محسوبة
+
+    ' Changed from a fixed variable to a calculated property for dynamic row heights.
     Private ReadOnly Property RowHeight As Integer
         Get
-            Return Math.Max(64, CInt(Me.Height / 8))  ' ارتفاع نسبي حسب حجم النافذة
+            ' Relative height based on the main window size for better scaling.
+            Return Math.Max(64, CInt(Me.Height / 8))
         End Get
     End Property
 End Class
