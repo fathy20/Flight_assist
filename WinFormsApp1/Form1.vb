@@ -93,13 +93,13 @@ Partial Public Class Form1
         Me.StartPosition = FormStartPosition.CenterScreen
         Me.Font = New Font("Segoe UI", 10.0F, FontStyle.Regular, GraphicsUnit.Point)
 
-        ' This code block loads the window icon from logo.ico
+        ' This code block loads the window icon from favicon.ico
         Try
-            Dim iconPath As String = Path.Combine(assetsDir, "logo.ico")
+            Dim iconPath As String = Path.Combine(assetsDir, "favicon.ico")
             If File.Exists(iconPath) Then
                 Me.Icon = New Icon(iconPath)
             Else
-                Console.WriteLine($"Warning: logo.ico not found at {iconPath}. Default icon will be used for the form.")
+                Console.WriteLine($"Warning: favicon.ico not found at {iconPath}. Default icon will be used for the form.")
             End If
         Catch ex As Exception
             Console.WriteLine($"Error loading form icon: {ex.Message}")
@@ -110,7 +110,7 @@ Partial Public Class Form1
         BindEvents()
 
         ' Ensure directories exist
-        Directory.CreateDirectory(Path.Combine(packageRoot, "data"))
+        Directory.CreateDirectory(Path.Combine(projectRoot, "data"))
         Directory.CreateDirectory(photosDir)
 
         Try
@@ -343,28 +343,21 @@ Partial Public Class Form1
 
     Private Function GetThumb(p As Person) As Image
         Const size As Integer = 48
-        If p Is Nothing Then Return MakeAvatar("?", size, 0)
-
-        Try
-            Dim photoPath As String = p.PhotoPath
-            If Not String.IsNullOrWhiteSpace(photoPath) Then
-                Dim fullPath = If(Path.IsPathRooted(photoPath), photoPath, Path.Combine(packageRoot, photoPath))
-                If File.Exists(fullPath) Then
-                    ' Use a memory stream to avoid locking the file
-                    Dim fileBytes = File.ReadAllBytes(fullPath)
-                    Using ms As New MemoryStream(fileBytes)
-                        Using rawImg As Image = Image.FromStream(ms)
-                            Return ResizeToThumb(rawImg, size, size)
-                        End Using
+        Dim defaultProfilePath As String = Path.Combine(photosDir, "profile.png")
+        If File.Exists(defaultProfilePath) Then
+            Try
+                Dim fileBytes = File.ReadAllBytes(defaultProfilePath)
+                Using ms As New MemoryStream(fileBytes)
+                    Using rawImg As Image = Image.FromStream(ms)
+                        Return ResizeToThumb(rawImg, size, size)
                     End Using
-                End If
-            End If
-        Catch ex As Exception
-            Console.WriteLine($"Error loading photo for {p.FullName}: {ex.Message}")
-        End Try
-
-        ' Fallback to avatar if photo not found or failed to load
-        Return MakeAvatar(GetInitials(p.FullName), size, p.Id)
+                End Using
+            Catch ex As Exception
+                Console.WriteLine($"Error loading profile.png: {ex.Message}")
+            End Try
+        End If
+        ' If profile.png is missing, fallback to a blank image
+        Return New Bitmap(size, size)
     End Function
 
     Private Function ResizeToThumb(src As Image, w As Integer, h As Integer) As Image
