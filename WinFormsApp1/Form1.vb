@@ -220,38 +220,8 @@ Partial Public Class Form1
     End Sub
 
     Private Sub EnsurePhotosAndPaths(excelFile As String)
-        Dim updated As Boolean = False
-        Using wb As New XLWorkbook(excelFile)
-            Dim ws = wb.Worksheet("People")
-            Dim r As Integer = 2
-            While Not ws.Cell(r, 1).IsEmpty()
-                Dim id As Integer = ws.Cell(r, 1).GetValue(Of Integer)()
-                Dim fullName As String = ws.Cell(r, 2).GetString()
-                Dim curPath As String = ws.Cell(r, 4).GetString()
-
-                Dim needsAvatar As Boolean = String.IsNullOrWhiteSpace(curPath)
-                If Not needsAvatar Then
-                    Dim absPath = If(Path.IsPathRooted(curPath), curPath, Path.Combine(packageRoot, curPath))
-                    If Not File.Exists(absPath) Then needsAvatar = True
-                End If
-
-                If needsAvatar Then
-                    Dim relPath As String = $"photos\emp_{id}.jpg"
-                    Dim destPath As String = Path.Combine(packageRoot, relPath)
-                    Directory.CreateDirectory(Path.GetDirectoryName(destPath))
-                    Using bmp = MakeAvatar(GetInitials(fullName), 256, id)
-                        SaveJpeg(destPath, bmp, 85L)
-                    End Using
-                    ws.Cell(r, 4).Value = relPath
-                    updated = True
-
-                    Dim p = people.FirstOrDefault(Function(person) person.Id = id)
-                    If p IsNot Nothing Then p.PhotoPath = relPath
-                End If
-                r += 1
-            End While
-            If updated Then wb.Save()
-        End Using
+        ' No avatar generation, no Excel update.
+        ' This method is now empty because we always use profile.png for missing photos.
     End Sub
 
     Private Sub PerformSearch(query As String)
@@ -343,20 +313,35 @@ Partial Public Class Form1
 
     Private Function GetThumb(p As Person) As Image
         Const size As Integer = 48
+        If p Is Nothing Then Return MakeAvatar("?", size, 0)
+
+        Try
+            Dim photoPath As String = p.PhotoPath
+            If Not String.IsNullOrWhiteSpace(photoPath) Then
+                Dim fullPath = If(Path.IsPathRooted(photoPath), photoPath, Path.Combine(packageRoot, photoPath))
+                If File.Exists(fullPath) Then
+                    ' استخدم الصورة من اللينك
+                    Dim fileBytes = File.ReadAllBytes(fullPath)
+                    Using ms As New MemoryStream(fileBytes)
+                        Using rawImg As Image = Image.FromStream(ms)
+                            Return ResizeToThumb(rawImg, size, size)
+                        End Using
+                    End Using
+                End If
+            End If
+        Catch ex As Exception
+            Console.WriteLine($"Error loading photo for {p.FullName}: {ex.Message}")
+        End Try
+
         Dim defaultProfilePath As String = Path.Combine(photosDir, "profile.png")
         If File.Exists(defaultProfilePath) Then
-            Try
-                Dim fileBytes = File.ReadAllBytes(defaultProfilePath)
-                Using ms As New MemoryStream(fileBytes)
-                    Using rawImg As Image = Image.FromStream(ms)
-                        Return ResizeToThumb(rawImg, size, size)
-                    End Using
+            Dim fileBytes = File.ReadAllBytes(defaultProfilePath)
+            Using ms As New MemoryStream(fileBytes)
+                Using rawImg As Image = Image.FromStream(ms)
+                    Return ResizeToThumb(rawImg, size, size)
                 End Using
-            Catch ex As Exception
-                Console.WriteLine($"Error loading profile.png: {ex.Message}")
-            End Try
+            End Using
         End If
-        ' If profile.png is missing, fallback to a blank image
         Return New Bitmap(size, size)
     End Function
 
