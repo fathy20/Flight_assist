@@ -233,8 +233,10 @@ Partial Public Class Form1
 
         If String.IsNullOrWhiteSpace(query) Then
             results = people.OrderBy(Function(p) p.FullName)
+            statusLbl.Text = $"Loaded: {people.Count} people"
         ElseIf Not IsQueryAllowed(query) Then
             results = Enumerable.Empty(Of Person)()
+            statusLbl.Text = "No matches"
         Else
             Dim q = query.ToLowerInvariant()
             results = people.
@@ -242,6 +244,14 @@ Partial Public Class Form1
                                OrElse p.Email.ToLower().StartsWith(q) _
                                OrElse p.Id.ToString().StartsWith(q)).
                 OrderBy(Function(p) p.FullName)
+
+            ' Show count of matches in status label
+            Dim matchCount = results.Count()
+            If matchCount > 0 Then
+                statusLbl.Text = $"Found: {matchCount} " & If(matchCount = 1, "person", "people")
+            Else
+                statusLbl.Text = "No matches"
+            End If
         End If
 
         For Each p In results
