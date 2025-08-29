@@ -188,7 +188,7 @@ Partial Public Class Form1
         header.Controls.Add(appLogoBox)
 
         ' تموضع العنوان نسبياً
-        titleLbl.Location = New Point(appLogoBox.Right + 12, (header.Height - 40) \ 2)
+        titleLbl.Location = New Point(appLogoBox.Right + 12, 16)  ' Changed Y position to 16 to move it higher
         ' تحجيم الخط حسب حجم الشاشة
         Dim fontSize As Single = Math.Max(14, Math.Min(20, Me.Width / 50))
         titleLbl.Font = New Font("Segoe UI Semibold", fontSize, FontStyle.Bold)
